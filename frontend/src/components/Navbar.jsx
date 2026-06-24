@@ -1,6 +1,7 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSocket } from '../contexts/SocketContext';
 import { Bars3Icon, XMarkIcon, ChatBubbleLeftRightIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 const categoryColors = {
@@ -11,6 +12,7 @@ const categoryColors = {
 
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const { totalUnread } = useSocket() || {};
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -25,13 +27,19 @@ export default function Navbar() {
     if (user?.role === 'admin') return '/admin';
     if (user?.role === 'vendor') {
       if (!user?.vendorProfile?.idDocument) return '/vendor/id-upload';
-      if (!user?.vendorProfile?.idVerified) return '/vendor/dashboard'; // shows pending screen
+      if (!user?.vendorProfile?.idVerified) return '/vendor/dashboard';
       return '/vendor/dashboard';
     }
     return '/dashboard';
   };
 
   const isActive = (path) => location.pathname === path;
+
+  const unreadBadge = totalUnread > 0 && (
+    <span className="ml-1 bg-red-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+      {totalUnread > 9 ? '9+' : totalUnread}
+    </span>
+  );
 
   return (
     <nav className="sticky top-0 z-50 bg-gray-950/90 backdrop-blur-xl border-b border-gray-800">
@@ -52,8 +60,13 @@ export default function Navbar() {
             </Link>
             {user && (
               <>
-                <Link to="/chat" className={`text-sm font-medium transition-colors flex items-center gap-1 ${isActive('/chat') ? 'text-primary-400' : 'text-gray-400 hover:text-white'}`}>
-                  <ChatBubbleLeftRightIcon className="w-4 h-4" /> Messages
+                <Link
+                  to="/chat"
+                  className={`text-sm font-medium transition-colors flex items-center gap-1 ${isActive('/chat') ? 'text-primary-400' : 'text-gray-400 hover:text-white'}`}
+                >
+                  <ChatBubbleLeftRightIcon className="w-4 h-4" />
+                  Messages
+                  {unreadBadge}
                 </Link>
                 <Link to={getDashboardLink()} className={`text-sm font-medium transition-colors ${isActive(getDashboardLink()) ? 'text-primary-400' : 'text-gray-400 hover:text-white'}`}>
                   Dashboard
@@ -104,7 +117,9 @@ export default function Navbar() {
           <Link to="/explore" onClick={() => setMenuOpen(false)} className="block text-gray-300 hover:text-white py-2">Explore</Link>
           {user ? (
             <>
-              <Link to="/chat" onClick={() => setMenuOpen(false)} className="block text-gray-300 hover:text-white py-2">Messages</Link>
+              <Link to="/chat" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 text-gray-300 hover:text-white py-2">
+                Messages {unreadBadge}
+              </Link>
               <Link to={getDashboardLink()} onClick={() => setMenuOpen(false)} className="block text-gray-300 hover:text-white py-2">Dashboard</Link>
               <div className="pt-2 border-t border-gray-800">
                 <p className="text-sm text-gray-400 mb-2">{user.name} · <span className="text-primary-400">{user.role}</span></p>

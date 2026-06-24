@@ -35,6 +35,16 @@ router.get('/conversations', protect, async (req, res) => {
   }
 });
 
+// @GET /api/chat/unread — total unread count for the current user (used by Navbar badge)
+router.get('/unread', protect, async (req, res) => {
+  try {
+    const count = await Message.countDocuments({ receiver: req.user._id, read: false });
+    res.json({ count });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // @GET /api/chat/:userId — get messages with a specific user
 router.get('/:userId', protect, async (req, res) => {
   try {

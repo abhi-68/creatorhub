@@ -6,7 +6,7 @@ import StarRating from '../components/StarRating';
 import toast from 'react-hot-toast';
 import {
   MapPinIcon, CheckBadgeIcon, GlobeAltIcon, PhoneIcon,
-  ChatBubbleLeftRightIcon, StarIcon
+  ChatBubbleLeftRightIcon, StarIcon, XMarkIcon, ChevronLeftIcon, ChevronRightIcon
 } from '@heroicons/react/24/solid';
 
 const categoryLabels = {
@@ -25,6 +25,7 @@ export default function VendorProfile() {
   const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '' });
   const [submittingReview, setSubmittingReview] = useState(false);
   const [activeTab, setActiveTab] = useState('portfolio');
+  const [lightboxIdx, setLightboxIdx] = useState(null);
 
   useEffect(() => {
     Promise.all([api.get(`/vendors/${id}`), api.get(`/vendors/${id}/reviews`)])
@@ -134,8 +135,12 @@ export default function VendorProfile() {
           {activeTab === 'portfolio' && (
             vp.portfolio?.length ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {vp.portfolio.map((item) => (
-                  <div key={item._id} className="aspect-square rounded-xl overflow-hidden bg-gray-800 group cursor-pointer">
+                {vp.portfolio.map((item, idx) => (
+                  <div
+                    key={item._id}
+                    className="aspect-square rounded-xl overflow-hidden bg-gray-800 group cursor-zoom-in"
+                    onClick={() => setLightboxIdx(idx)}
+                  >
                     <img src={item.image} alt={item.caption} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                   </div>
                 ))}
@@ -231,6 +236,51 @@ export default function VendorProfile() {
           )}
         </div>
       </div>
+      {/* Portfolio Lightbox */}
+      {lightboxIdx !== null && vp.portfolio?.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
+          onClick={() => setLightboxIdx(null)}
+        >
+          {/* Prev */}
+          {vp.portfolio.length > 1 && (
+            <button
+              className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
+              onClick={(e) => { e.stopPropagation(); setLightboxIdx((i) => (i - 1 + vp.portfolio.length) % vp.portfolio.length); }}
+            >
+              <ChevronLeftIcon className="w-6 h-6" />
+            </button>
+          )}
+          {/* Image */}
+          <div className="max-w-5xl max-h-[90vh] flex flex-col items-center gap-3 px-16" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={vp.portfolio[lightboxIdx].image}
+              alt={vp.portfolio[lightboxIdx].caption}
+              className="max-h-[80vh] max-w-full object-contain rounded-xl shadow-2xl"
+            />
+            {vp.portfolio[lightboxIdx].caption && (
+              <p className="text-gray-300 text-sm text-center">{vp.portfolio[lightboxIdx].caption}</p>
+            )}
+            <p className="text-gray-600 text-xs">{lightboxIdx + 1} / {vp.portfolio.length}</p>
+          </div>
+          {/* Next */}
+          {vp.portfolio.length > 1 && (
+            <button
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
+              onClick={(e) => { e.stopPropagation(); setLightboxIdx((i) => (i + 1) % vp.portfolio.length); }}
+            >
+              <ChevronRightIcon className="w-6 h-6" />
+            </button>
+          )}
+          {/* Close */}
+          <button
+            className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+            onClick={() => setLightboxIdx(null)}
+          >
+            <XMarkIcon className="w-6 h-6" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
-import { PlusIcon, TrashIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, TrashIcon, CloudArrowUpIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import VendorIdUpload from '../VendorIdUpload';
 
 const categories = [
@@ -65,6 +65,9 @@ function VendorDashboardFull({ user, updateUser, logout, navigate }) {
   });
   const [packages, setPackages] = useState(vp.packages || []);
   const [newPkg, setNewPkg] = useState({ name: '', description: '', price: '', deliveryDays: '' });
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [editPkg, setEditPkg] = useState({});
+  const [resending, setResending] = useState(false);
   const [uploadingPortfolio, setUploadingPortfolio] = useState(false);
   const [uploadingId, setUploadingId] = useState(false);
   const portfolioRef = useRef();
@@ -84,10 +87,27 @@ function VendorDashboardFull({ user, updateUser, logout, navigate }) {
     }
   };
 
+  const handleResendVerification = async () => {
+    setResending(true);
+    try {
+      await api.post('/auth/resend-verification', { email: user.email });
+      toast.success('Verification email sent! Check your inbox.');
+    } catch { toast.error('Failed to send'); }
+    finally { setResending(false); }
+  };
+
   const handleAddPackage = () => {
     if (!newPkg.name || !newPkg.price) return toast.error('Package name and price required');
     setPackages((prev) => [...prev, { ...newPkg, price: Number(newPkg.price), deliveryDays: Number(newPkg.deliveryDays) || undefined }]);
     setNewPkg({ name: '', description: '', price: '', deliveryDays: '' });
+  };
+
+  const startEditPkg = (idx) => { setEditingIdx(idx); setEditPkg({ ...packages[idx] }); };
+  const cancelEditPkg = () => setEditingIdx(null);
+  const saveEditPkg = () => {
+    if (!editPkg.name || !editPkg.price) return toast.error('Name and price required');
+    setPackages((prev) => prev.map((p, i) => i === editingIdx ? { ...editPkg, price: Number(editPkg.price), deliveryDays: Number(editPkg.deliveryDays) || undefined } : p));
+    setEditingIdx(null);
   };
 
   const handlePortfolioUpload = async (e) => {
@@ -155,8 +175,11 @@ function VendorDashboardFull({ user, updateUser, logout, navigate }) {
       </div>
 
       {!user?.isVerified && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6">
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <p className="text-yellow-400 font-semibold">⚠️ Verify your email to appear in search results</p>
+          <button onClick={handleResendVerification} disabled={resending} className="text-sm text-yellow-300 underline underline-offset-2 hover:text-yellow-200 disabled:opacity-50 whitespace-nowrap">
+            {resending ? 'Sending...' : 'Resend verification email'}
+          </button>
         </div>
       )}
 
@@ -305,18 +328,50 @@ function VendorDashboardFull({ user, updateUser, logout, navigate }) {
 
           <div className="space-y-3">
             {packages.map((pkg, i) => (
-              <div key={i} className="card p-4 flex items-start justify-between gap-4">
-                <div>
-                  <p className="font-semibold text-white">{pkg.name}</p>
-                  {pkg.description && <p className="text-gray-400 text-sm">{pkg.description}</p>}
-                  {pkg.deliveryDays && <p className="text-gray-500 text-xs mt-1">⏱ {pkg.deliveryDays} days</p>}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xl font-bold gradient-text">${pkg.price}</span>
-                  <button onClick={() => setPackages((prev) => prev.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-300">
-                    <TrashIcon className="w-4 h-4" />
-                  </button>
-                </div>
+              <div key={i} className="card p-4">
+                {editingIdx === i ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Name *</label>
+                        <input className="input" value={editPkg.name} onChange={(e) => setEditPkg((p) => ({ ...p, name: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Price (USD) *</label>
+                        <input type="number" className="input" value={editPkg.price} onChange={(e) => setEditPkg((p) => ({ ...p, price: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Description</label>
+                        <input className="input" value={editPkg.description || ''} onChange={(e) => setEditPkg((p) => ({ ...p, description: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Delivery (days)</label>
+                        <input type="number" className="input" value={editPkg.deliveryDays || ''} onChange={(e) => setEditPkg((p) => ({ ...p, deliveryDays: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={saveEditPkg} className="btn-primary text-sm py-1.5 flex items-center gap-1"><CheckIcon className="w-4 h-4" /> Save</button>
+                      <button onClick={cancelEditPkg} className="btn-secondary text-sm py-1.5 flex items-center gap-1"><XMarkIcon className="w-4 h-4" /> Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-semibold text-white">{pkg.name}</p>
+                      {pkg.description && <p className="text-gray-400 text-sm">{pkg.description}</p>}
+                      {pkg.deliveryDays && <p className="text-gray-500 text-xs mt-1">⏱ {pkg.deliveryDays} days</p>}
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <span className="text-xl font-bold gradient-text">${pkg.price}</span>
+                      <button onClick={() => startEditPkg(i)} className="text-gray-400 hover:text-white transition-colors">
+                        <PencilIcon className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => setPackages((prev) => prev.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-300 transition-colors">
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

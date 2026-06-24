@@ -10,22 +10,27 @@ import { PaperAirplaneIcon, ChevronLeftIcon } from '@heroicons/react/24/solid';
 export default function Chat() {
   const { userId: paramUserId } = useParams();
   const { user } = useAuth();
-  const { socket, isOnline } = useSocket();
+  const { socket, isOnline, fetchUnread } = useSocket();
   const navigate = useNavigate();
 
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
   const [activeUser, setActiveUser] = useState(null);
   const [input, setInput] = useState('');
-  const [typing, setTyping] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
+  // Ref so socket listeners always see the latest activeUser without re-subscribing
+  const activeUserRef = useRef(null);
+  useEffect(() => { activeUserRef.current = activeUser; }, [activeUser]);
+
   // Load conversations list
-  useEffect(() => {
-    api.get('/chat/conversations').then((res) => setConversations(res.data)).catch(console.error);
-  }, []);
+  const loadConversations = () =>
+    api.get('/chat/conversations').then((res) => setConversations(res.data)).catch(() => {});
+
+  useEffect(() => { loadConversations(); }, []);
 
   // Open conversation from URL param
   useEffect(() => {
@@ -33,36 +38,53 @@ export default function Chat() {
   }, [paramUserId]);
 
   const openConversation = async (uid) => {
+    setOpeningChat(true);
     try {
       const [msgRes, userRes] = await Promise.all([
         api.get(`/chat/${uid}`),
         api.get(`/vendors/${uid}`).catch(() => api.get(`/users/${uid}`)),
       ]);
       setMessages(msgRes.data);
+      setPeerTyping(false);
       setActiveUser(userRes.data._id ? userRes.data : { _id: uid, name: 'User' });
       navigate(`/chat/${uid}`, { replace: true });
-    } catch (err) {
-      console.error(err);
+      // Conversations were marked-read server-side; refresh badge + sidebar
+      loadConversations();
+      fetchUnread();
+    } catch {
+      toast.error('Could not open conversation');
+    } finally {
+      setOpeningChat(false);
     }
   };
 
-  // Socket listeners
+  // Single stable socket effect — uses ref so it doesn't re-subscribe on every activeUser change
   useEffect(() => {
     if (!socket) return;
-    socket.on('new_message', (msg) => {
-      const peerId = activeUser?._id;
-      const isRelevant = msg.sender._id === peerId || msg.receiver._id === peerId;
+
+    const handleNewMessage = (msg) => {
+      const peerId = activeUserRef.current?._id;
+      const senderId = msg.sender?._id ?? msg.sender;
+      const isRelevant = peerId && (senderId === peerId);
       if (isRelevant) {
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) =>
+          prev.some((m) => m._id === msg._id) ? prev : [...prev, msg]
+        );
       }
-      // Refresh conversations
-      api.get('/chat/conversations').then((res) => setConversations(res.data));
-    });
-    socket.on('user_typing', ({ senderId, isTyping }) => {
-      if (senderId === activeUser?._id) setPeerTyping(isTyping);
-    });
-    return () => { socket.off('new_message'); socket.off('user_typing'); };
-  }, [socket, activeUser]);
+      loadConversations();
+    };
+
+    const handleTyping = ({ senderId, isTyping }) => {
+      if (senderId === activeUserRef.current?._id) setPeerTyping(isTyping);
+    };
+
+    socket.on('new_message', handleNewMessage);
+    socket.on('user_typing', handleTyping);
+    return () => {
+      socket.off('new_message', handleNewMessage);
+      socket.off('user_typing', handleTyping);
+    };
+  }, [socket]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -77,7 +99,6 @@ export default function Chat() {
       socket.emit('send_message', { receiverId: activeUser._id, content });
       socket.emit('typing', { receiverId: activeUser._id, isTyping: false });
     } else {
-      // REST fallback when socket is disconnected
       try {
         const { data } = await api.post(`/chat/${activeUser._id}`, { content });
         setMessages((prev) => [...prev, data]);
@@ -89,7 +110,7 @@ export default function Chat() {
 
   const handleTyping = (e) => {
     setInput(e.target.value);
-    if (!socket || !activeUser) return;
+    if (!socket?.connected || !activeUser) return;
     socket.emit('typing', { receiverId: activeUser._id, isTyping: true });
     clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
@@ -100,6 +121,7 @@ export default function Chat() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex h-[calc(100vh-10rem)] bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
+
         {/* Sidebar: Conversations */}
         <div className={`${activeUser ? 'hidden sm:flex' : 'flex'} flex-col w-full sm:w-80 border-r border-gray-800`}>
           <div className="p-4 border-b border-gray-800">
@@ -117,6 +139,7 @@ export default function Chat() {
                 <button
                   key={conv.conversationId}
                   onClick={() => openConversation(conv.participant._id)}
+                  disabled={openingChat}
                   className={`w-full flex items-center gap-3 p-4 hover:bg-gray-800 transition-colors text-left ${activeUser?._id === conv.participant._id ? 'bg-gray-800' : ''}`}
                 >
                   <div className="relative flex-shrink-0">
@@ -133,12 +156,16 @@ export default function Chat() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center">
-                      <p className="font-medium text-white text-sm truncate">{conv.participant.name}</p>
+                      <p className={`text-sm truncate ${conv.unread > 0 ? 'font-bold text-white' : 'font-medium text-white'}`}>
+                        {conv.participant.name}
+                      </p>
                       {conv.unread > 0 && (
                         <span className="bg-primary-600 text-white text-xs rounded-full px-2 py-0.5 ml-2 flex-shrink-0">{conv.unread}</span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 truncate">{conv.lastMessage?.content}</p>
+                    <p className={`text-xs truncate ${conv.unread > 0 ? 'text-gray-300' : 'text-gray-500'}`}>
+                      {conv.lastMessage?.content}
+                    </p>
                   </div>
                 </button>
               ))
@@ -175,12 +202,18 @@ export default function Chat() {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {messages.length === 0 && (
+                <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                  No messages yet — say hello! 👋
+                </div>
+              )}
               {messages.map((msg) => {
-                const isMine = msg.sender._id === user._id || msg.sender === user._id;
+                const senderId = msg.sender?._id ?? msg.sender;
+                const isMine = senderId === user._id;
                 return (
                   <div key={msg._id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl text-sm ${isMine ? 'bg-primary-600 text-white rounded-br-sm' : 'bg-gray-800 text-gray-100 rounded-bl-sm'}`}>
-                      <p>{msg.content}</p>
+                      <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                       <p className={`text-xs mt-1 ${isMine ? 'text-primary-200' : 'text-gray-500'}`}>
                         {formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}
                       </p>
@@ -209,6 +242,7 @@ export default function Chat() {
                 onChange={handleTyping}
                 placeholder="Type a message..."
                 className="input flex-1 py-2.5"
+                maxLength={2000}
                 autoFocus
               />
               <button type="submit" disabled={!input.trim()} className="btn-primary px-4 py-2.5 disabled:opacity-40">
@@ -219,9 +253,15 @@ export default function Chat() {
         ) : (
           <div className="hidden sm:flex flex-1 items-center justify-center text-center text-gray-500">
             <div>
-              <div className="text-5xl mb-4">💬</div>
-              <p className="text-lg font-medium text-gray-400">Select a conversation</p>
-              <p className="text-sm mt-1">or <Link to="/explore" className="text-primary-400 hover:underline">find a creator</Link> to message</p>
+              {openingChat ? (
+                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              ) : (
+                <>
+                  <div className="text-5xl mb-4">💬</div>
+                  <p className="text-lg font-medium text-gray-400">Select a conversation</p>
+                  <p className="text-sm mt-1">or <Link to="/explore" className="text-primary-400 hover:underline">find a creator</Link> to message</p>
+                </>
+              )}
             </div>
           </div>
         )}
