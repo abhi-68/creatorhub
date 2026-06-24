@@ -7,6 +7,16 @@ const generateToken = require('../utils/generateToken');
 const { sendEmail, emailTemplates } = require('../utils/email');
 const { protect } = require('../middleware/auth');
 
+const sendEmailInBackground = (mailOptions, logPrefix) => {
+  setImmediate(async () => {
+    try {
+      await sendEmail(mailOptions);
+    } catch (error) {
+      console.warn(`${logPrefix}:`, error.message);
+    }
+  });
+};
+
 // @POST /api/auth/register
 router.post(
   '/register',
@@ -36,17 +46,19 @@ router.post(
       });
 
       const verifyLink = `${process.env.CLIENT_URL}/verify-email?token=${verificationToken}`;
-      try {
-        await sendEmail({ to: email, subject: 'Verify your CreatorHub account', html: emailTemplates.verifyEmail(name, verifyLink) });
-        if (role === 'vendor') {
-          await sendEmail({ to: email, subject: 'Welcome to CreatorHub as a Vendor!', html: emailTemplates.welcomeVendor(name) });
-        }
-      } catch (emailErr) {
-        console.warn('Email sending failed (check EMAIL_USER/EMAIL_PASS in .env):', emailErr.message);
-        // Registration still succeeds — user can be manually verified via admin
-      }
-
       res.status(201).json({ message: 'Registration successful! Please check your email to verify your account.' });
+
+      sendEmailInBackground(
+        { to: email, subject: 'Verify your CreatorHub account', html: emailTemplates.verifyEmail(name, verifyLink) },
+        'Email sending failed (check EMAIL_USER/EMAIL_PASS in .env)'
+      );
+
+      if (role === 'vendor') {
+        sendEmailInBackground(
+          { to: email, subject: 'Welcome to CreatorHub as a Vendor!', html: emailTemplates.welcomeVendor(name) },
+          'Welcome vendor email failed'
+        );
+      }
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Server error' });
@@ -67,12 +79,12 @@ router.post('/resend-verification', [body('email').isEmail().normalizeEmail()], 
     await user.save();
 
     const verifyLink = `${process.env.CLIENT_URL}/verify-email?token=${verificationToken}`;
-    try {
-      await sendEmail({ to: user.email, subject: 'Verify your CreatorHub account', html: emailTemplates.verifyEmail(user.name, verifyLink) });
-    } catch (e) {
-      console.warn('Email failed:', e.message);
-    }
     res.json({ message: 'Verification email sent! Check your inbox.' });
+
+    sendEmailInBackground(
+      { to: user.email, subject: 'Verify your CreatorHub account', html: emailTemplates.verifyEmail(user.name, verifyLink) },
+      'Email failed'
+    );
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -140,13 +152,12 @@ router.post('/forgot-password', [body('email').isEmail().normalizeEmail()], asyn
     await user.save();
 
     const resetLink = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
-    try {
-      await sendEmail({ to: user.email, subject: 'Reset your CreatorHub password', html: emailTemplates.resetPassword(user.name, resetLink) });
-    } catch (emailErr) {
-      console.warn('Email sending failed:', emailErr.message);
-    }
-
     res.json({ message: 'If that email exists, a reset link was sent.' });
+
+    sendEmailInBackground(
+      { to: user.email, subject: 'Reset your CreatorHub password', html: emailTemplates.resetPassword(user.name, resetLink) },
+      'Email sending failed'
+    );
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }

@@ -115,18 +115,19 @@ router.put('/vendors/:id/verify-id', protect, requireRole('admin'), async (req, 
     );
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
 
-    // Send approval email
-    try {
-      await sendEmail({
-        to: vendor.email,
-        subject: '✅ Your ID has been verified on CreatorHub!',
-        html: emailTemplates.idApproved(vendor.name),
-      });
-    } catch (e) {
-      console.warn('ID approval email failed:', e.message);
-    }
-
     res.json({ message: 'ID verified' });
+
+    setImmediate(async () => {
+      try {
+        await sendEmail({
+          to: vendor.email,
+          subject: '✅ Your ID has been verified on CreatorHub!',
+          html: emailTemplates.idApproved(vendor.name),
+        });
+      } catch (e) {
+        console.warn('ID approval email failed:', e.message);
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
