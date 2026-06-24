@@ -16,13 +16,26 @@ const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  if (origin === 'http://localhost:5173') return true;
+
+  try {
+    const parsedOrigin = new URL(origin);
+    return parsedOrigin.hostname.endsWith('.vercel.app');
+  } catch {
+    return false;
+  }
+};
+
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
 
-    return callback(new Error('Not allowed by CORS'));
+    return callback(null, false);
   },
   credentials: true,
 };
