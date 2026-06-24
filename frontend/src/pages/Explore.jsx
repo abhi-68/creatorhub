@@ -29,6 +29,11 @@ export default function Explore() {
   const page = Number(searchParams.get('page') || 1);
   const [searchInput, setSearchInput] = useState(search);
 
+  // Keep input in sync when the URL changes (e.g. browser back/forward)
+  useEffect(() => {
+    setSearchInput(search);
+  }, [search]);
+
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams({ page, limit: 12, sort });

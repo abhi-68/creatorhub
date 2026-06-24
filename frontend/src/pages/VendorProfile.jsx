@@ -40,6 +40,7 @@ export default function VendorProfile() {
     try {
       const { data } = await api.post(`/reviews/${id}`, reviewForm);
       setReviews((prev) => [data, ...prev]);
+      setReviewForm({ rating: 5, comment: '' });
       toast.success('Review submitted!');
       // Refresh vendor rating
       const vRes = await api.get(`/vendors/${id}`);
@@ -149,7 +150,7 @@ export default function VendorProfile() {
 
           {activeTab === 'reviews' && (
             <div className="space-y-4">
-              {user && user.role === 'user' && (
+              {user && user.role === 'user' && !reviews.some((r) => r.reviewer?._id === user._id) && (
                 <form onSubmit={handleReview} className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
                   <h3 className="font-semibold text-white mb-4">Leave a Review</h3>
                   <div className="flex gap-2 mb-3">

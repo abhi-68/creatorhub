@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const Review = require('../models/Review');
+const Message = require('../models/Message');
 const { protect, requireRole } = require('../middleware/auth');
 const { sendEmail, emailTemplates } = require('../utils/email');
 
@@ -69,7 +70,6 @@ router.delete('/users/:id', protect, requireRole('admin'), async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.role === 'admin') return res.status(403).json({ error: 'Cannot delete admin accounts' });
-    const Message = require('../models/Message');
     await Promise.all([
       User.findByIdAndDelete(req.params.id),
       Message.deleteMany({ $or: [{ sender: req.params.id }, { receiver: req.params.id }] }),
@@ -86,7 +86,10 @@ router.put('/users/:id/verify-email', protect, requireRole('admin'), async (req,
   try {
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { $set: { isVerified: true, verificationToken: undefined, verificationTokenExpires: undefined } },
+      {
+        $set: { isVerified: true },
+        $unset: { verificationToken: '', verificationTokenExpires: '' },
+      },
       { new: true }
     );
     if (!user) return res.status(404).json({ error: 'User not found' });

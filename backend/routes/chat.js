@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Message = require('../models/Message');
+const User = require('../models/User');
 const { protect } = require('../middleware/auth');
 
 // Build a stable conversation ID from two user IDs
@@ -57,6 +58,10 @@ router.post('/:userId', protect, async (req, res) => {
   try {
     const { content } = req.body;
     if (!content?.trim()) return res.status(400).json({ error: 'Message content required' });
+    if (content.trim().length > 2000) return res.status(400).json({ error: 'Message too long (max 2000 chars)' });
+
+    const receiver = await User.findById(req.params.userId).select('_id isActive');
+    if (!receiver || !receiver.isActive) return res.status(404).json({ error: 'User not found' });
 
     const convId = getConvId(req.user._id.toString(), req.params.userId);
     const message = await Message.create({

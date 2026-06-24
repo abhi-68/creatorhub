@@ -31,6 +31,10 @@ module.exports = (io) => {
     // Send a message
     socket.on('send_message', async ({ receiverId, content }) => {
       if (!content?.trim() || !receiverId) return;
+      if (content.trim().length > 2000) {
+        socket.emit('error', { message: 'Message too long (max 2000 chars)' });
+        return;
+      }
       try {
         const convId = getConvId(socket.userId, receiverId);
         const message = await Message.create({

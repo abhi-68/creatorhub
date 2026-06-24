@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import api from '../lib/api';
+import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { PaperAirplaneIcon, ChevronLeftIcon } from '@heroicons/react/24/solid';
 
@@ -35,7 +36,7 @@ export default function Chat() {
     try {
       const [msgRes, userRes] = await Promise.all([
         api.get(`/chat/${uid}`),
-        api.get(`/vendors/${uid}`).catch(() => api.get(`/users/profile`)),
+        api.get(`/vendors/${uid}`).catch(() => api.get(`/users/${uid}`)),
       ]);
       setMessages(msgRes.data);
       setActiveUser(userRes.data._id ? userRes.data : { _id: uid, name: 'User' });
@@ -67,12 +68,23 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const sendMessage = (e) => {
+  const sendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim() || !activeUser) return;
-    socket?.emit('send_message', { receiverId: activeUser._id, content: input.trim() });
+    const content = input.trim();
     setInput('');
-    socket?.emit('typing', { receiverId: activeUser._id, isTyping: false });
+    if (socket?.connected) {
+      socket.emit('send_message', { receiverId: activeUser._id, content });
+      socket.emit('typing', { receiverId: activeUser._id, isTyping: false });
+    } else {
+      // REST fallback when socket is disconnected
+      try {
+        const { data } = await api.post(`/chat/${activeUser._id}`, { content });
+        setMessages((prev) => [...prev, data]);
+      } catch {
+        toast.error('Failed to send message');
+      }
+    }
   };
 
   const handleTyping = (e) => {

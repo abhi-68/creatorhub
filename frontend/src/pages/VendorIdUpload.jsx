@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api';
@@ -138,11 +138,11 @@ function PendingScreen({ user }) {
   const navigate = useNavigate();
   const vp = user?.vendorProfile || {};
 
-  if (vp.idVerified) {
-    // Redirect to dashboard if already verified (shouldn't land here)
-    navigate('/vendor/dashboard');
-    return null;
-  }
+  useEffect(() => {
+    if (vp.idVerified) navigate('/vendor/dashboard', { replace: true });
+  }, [vp.idVerified, navigate]);
+
+  if (vp.idVerified) return null;
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">

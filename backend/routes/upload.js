@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { upload, uploadToCloudinary } = require('../config/cloudinary');
 const { protect, requireRole } = require('../middleware/auth');
 const User = require('../models/User');
@@ -37,6 +38,20 @@ router.post('/id', protect, requireRole('vendor'), upload.single('image'), async
   } catch (err) {
     res.status(500).json({ error: 'Upload failed' });
   }
+});
+
+// Handle multer errors (file too large, wrong type) with clear messages
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File must be under 10MB' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  if (err?.message === 'Only image files are allowed') {
+    return res.status(400).json({ error: 'Only image files are allowed (JPG, PNG, WEBP)' });
+  }
+  next(err);
 });
 
 module.exports = router;
