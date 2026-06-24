@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require('../models/User');
 const Review = require('../models/Review');
 const { protect, requireRole, requireVerified, requireIdVerified } = require('../middleware/auth');
+const { body, validationResult } = require('express-validator');
 
 // @GET /api/vendors — public list with filters
 router.get('/', async (req, res) => {
@@ -26,7 +27,7 @@ router.get('/', async (req, res) => {
     };
 
     const vendors = await User.find(filter)
-      .select('-password -verificationToken -resetPasswordToken')
+      .select('-password -verificationToken -resetPasswordToken -vendorProfile.idDocument')
       .sort(sortMap[sort] || sortMap.rating)
       .skip((page - 1) * limit)
       .limit(Number(limit));
@@ -42,8 +43,14 @@ router.get('/', async (req, res) => {
 // @GET /api/vendors/featured
 router.get('/featured', async (req, res) => {
   try {
-    const vendors = await User.find({ role: 'vendor', isActive: true, isVerified: true, 'vendorProfile.idVerified': true, 'vendorProfile.featured': true })
-      .select('-password -verificationToken -resetPasswordToken')
+    const vendors = await User.find({
+      role: 'vendor',
+      isActive: true,
+      isVerified: true,
+      'vendorProfile.idVerified': true,
+      'vendorProfile.featured': true,
+    })
+      .select('-password -verificationToken -resetPasswordToken -vendorProfile.idDocument')
       .sort({ 'vendorProfile.rating': -1 })
       .limit(8);
     res.json(vendors);
@@ -52,35 +59,42 @@ router.get('/featured', async (req, res) => {
   }
 });
 
-// @GET /api/vendors/:id — public vendor profile
-router.get('/:id', async (req, res) => {
-  try {
-    const vendor = await User.findOne({ _id: req.params.id, role: 'vendor', isActive: true })
-      .select('-password -verificationToken -resetPasswordToken -idDocument');
-    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
-    res.json(vendor);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+// ⚠️  FIX: /profile and /portfolio must come BEFORE /:id or Express will treat
+//     "profile" as a vendorId and return 404 on those routes.
 
 // @PUT /api/vendors/profile — update own vendor profile
-router.put('/profile', protect, requireRole('vendor'), requireVerified, requireIdVerified, async (req, res) => {
-  try {
-    const allowedFields = ['bio', 'location', 'instagram', 'youtube', 'tiktok', 'website', 'phone', 'packages', 'availability', 'category'];
-    const update = {};
-    allowedFields.forEach((f) => {
-      if (req.body[f] !== undefined) update[`vendorProfile.${f}`] = req.body[f];
-    });
-    if (req.body.name) update.name = req.body.name;
-    if (req.body.avatar) update.avatar = req.body.avatar;
+router.put(
+  '/profile',
+  protect,
+  requireRole('vendor'),
+  requireVerified,
+  requireIdVerified,
+  [
+    body('bio').optional().isLength({ max: 1000 }).withMessage('Bio must be under 1000 characters'),
+    body('phone').optional().isMobilePhone().withMessage('Invalid phone number'),
+    body('website').optional().isURL().withMessage('Invalid website URL'),
+    body('packages').optional().isArray().withMessage('Packages must be an array'),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const user = await User.findByIdAndUpdate(req.user._id, { $set: update }, { new: true }).select('-password');
-    res.json(user.toSafeObject());
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    try {
+      const allowedFields = ['bio', 'location', 'instagram', 'youtube', 'tiktok', 'website', 'phone', 'packages', 'availability', 'category'];
+      const update = {};
+      allowedFields.forEach((f) => {
+        if (req.body[f] !== undefined) update[`vendorProfile.${f}`] = req.body[f];
+      });
+      if (req.body.name) update.name = req.body.name;
+      if (req.body.avatar) update.avatar = req.body.avatar;
+
+      const user = await User.findByIdAndUpdate(req.user._id, { $set: update }, { new: true }).select('-password -vendorProfile.idDocument');
+      res.json(user.toSafeObject());
+    } catch (err) {
+      res.status(500).json({ error: 'Server error' });
+    }
   }
-});
+);
 
 // @POST /api/vendors/portfolio — add portfolio item
 router.post('/portfolio', protect, requireRole('vendor'), requireVerified, requireIdVerified, async (req, res) => {
@@ -92,7 +106,7 @@ router.post('/portfolio', protect, requireRole('vendor'), requireVerified, requi
       req.user._id,
       { $push: { 'vendorProfile.portfolio': { image, caption } } },
       { new: true }
-    ).select('-password');
+    ).select('-password -vendorProfile.idDocument');
     res.json(user.toSafeObject());
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -106,8 +120,20 @@ router.delete('/portfolio/:itemId', protect, requireRole('vendor'), requireIdVer
       req.user._id,
       { $pull: { 'vendorProfile.portfolio': { _id: req.params.itemId } } },
       { new: true }
-    ).select('-password');
+    ).select('-password -vendorProfile.idDocument');
     res.json(user.toSafeObject());
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// @GET /api/vendors/:id — public vendor profile  (must stay AFTER named routes)
+router.get('/:id', async (req, res) => {
+  try {
+    const vendor = await User.findOne({ _id: req.params.id, role: 'vendor', isActive: true })
+      .select('-password -verificationToken -resetPasswordToken -vendorProfile.idDocument');
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+    res.json(vendor);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }

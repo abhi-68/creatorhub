@@ -5,12 +5,12 @@ const Message = require('../models/Message');
 const Review = require('../models/Review');
 const { protect } = require('../middleware/auth');
 
-// @GET /api/users/profile
+// @GET /api/users/profile — own profile
 router.get('/profile', protect, async (req, res) => {
   res.json(req.user.toSafeObject());
 });
 
-// @PUT /api/users/profile
+// @PUT /api/users/profile — update own basic profile
 router.put('/profile', protect, async (req, res) => {
   try {
     const { name, avatar } = req.body;
@@ -25,7 +25,21 @@ router.put('/profile', protect, async (req, res) => {
   }
 });
 
-// @DELETE /api/users/account
+// @GET /api/users/:id — get any user's public profile (for chat participant lookup)
+// ⚠️ FIX: Chat.jsx was falling back to /users/profile (own profile) when the
+//    target user wasn't a vendor. This endpoint provides proper user lookup by ID.
+router.get('/:id', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select('name avatar role vendorProfile.category');
+    if (!user || !user.isActive) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// @DELETE /api/users/account — self-delete
 router.delete('/account', protect, async (req, res) => {
   try {
     if (req.user.role === 'admin') {

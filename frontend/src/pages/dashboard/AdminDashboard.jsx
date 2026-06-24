@@ -11,8 +11,12 @@ export default function AdminDashboard() {
   const [roleFilter, setRoleFilter] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const fetchStats = () => {
     api.get('/admin/stats').then((res) => setStats(res.data)).catch(console.error);
+  };
+
+  useEffect(() => {
+    fetchStats();
   }, []);
 
   useEffect(() => {
@@ -43,6 +47,7 @@ export default function AdminDashboard() {
       await api.delete(`/admin/users/${userId}`);
       setUsers((prev) => prev.filter((u) => u._id !== userId));
       toast.success('User deleted');
+      fetchStats();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed');
     }
@@ -69,7 +74,25 @@ export default function AdminDashboard() {
       await api.put(`/admin/vendors/${vendorId}/verify-id`);
       setUsers((prev) => prev.map((u) => u._id === vendorId ? { ...u, vendorProfile: { ...u.vendorProfile, idVerified: true } } : u));
       toast.success('ID verified!');
+      fetchStats();
     } catch { toast.error('Failed'); }
+  };
+
+  const rejectId = async (vendorId) => {
+    const reason = window.prompt('Reason for rejecting this ID:', 'Please re-upload a clearer image.');
+    if (reason === null) return;
+
+    try {
+      await api.put(`/admin/vendors/${vendorId}/reject-id`, { reason });
+      setUsers((prev) => prev.map((u) => u._id === vendorId ? {
+        ...u,
+        vendorProfile: { ...u.vendorProfile, idDocument: null, idVerified: false },
+      } : u));
+      toast.success('ID rejected');
+      fetchStats();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed');
+    }
   };
 
   const statCards = stats ? [
@@ -77,6 +100,12 @@ export default function AdminDashboard() {
     { label: 'Total Vendors', value: stats.totalVendors, icon: '🌟', color: 'from-primary-600 to-primary-500' },
     { label: 'Verified Vendors', value: stats.verifiedVendors, icon: '✅', color: 'from-green-600 to-green-500' },
     { label: 'Total Reviews', value: stats.totalReviews, icon: '⭐', color: 'from-yellow-600 to-yellow-500' },
+    {
+      label: 'Pending ID Reviews',
+      value: stats.pendingIdVerifications ?? 0,
+      icon: '⏳',
+      color: (stats.pendingIdVerifications ?? 0) > 0 ? 'from-orange-600 to-orange-500' : 'from-gray-600 to-gray-500',
+    },
   ] : [];
 
   return (
@@ -97,14 +126,36 @@ export default function AdminDashboard() {
       </div>
 
       {tab === 'stats' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {statCards.map((s) => (
-            <div key={s.label} className={`bg-gradient-to-br ${s.color} rounded-2xl p-5 text-white`}>
-              <div className="text-3xl mb-2">{s.icon}</div>
-              <div className="text-3xl font-bold">{s.value}</div>
-              <div className="text-white/80 text-sm mt-1">{s.label}</div>
+        <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {statCards.map((s) => (
+              <div key={s.label} className={`bg-gradient-to-br ${s.color} rounded-2xl p-5 text-white`}>
+                <div className="text-3xl mb-2">{s.icon}</div>
+                <div className="text-3xl font-bold">{s.value ?? '—'}</div>
+                <div className="text-white/80 text-sm mt-1">{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {stats?.pendingIdVerifications > 0 && (
+            <div className="mt-6 bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="font-semibold text-orange-400">
+                  ⏳ {stats.pendingIdVerifications} vendor{stats.pendingIdVerifications !== 1 ? 's' : ''} waiting for ID review
+                </p>
+                <p className="text-gray-400 text-sm mt-0.5">Switch to Users tab filtered to vendors to review pending IDs.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setTab('users');
+                  setRoleFilter('vendor');
+                }}
+                className="btn-secondary text-sm py-2"
+              >
+                Review Now
+              </button>
             </div>
-          ))}
+          )}
         </div>
       )}
 
@@ -171,6 +222,9 @@ export default function AdminDashboard() {
                         {u.role === 'vendor' && u.vendorProfile?.idDocument && !u.vendorProfile?.idVerified && (
                           <span className="badge bg-orange-500/20 text-orange-400 ml-1">ID Pending</span>
                         )}
+                        {u.role === 'vendor' && u.vendorProfile?.idVerified && (
+                          <span className="badge bg-blue-500/20 text-blue-400 ml-1">ID ✓</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -193,9 +247,20 @@ export default function AdminDashboard() {
                                 {u.vendorProfile?.featured ? '⭐ Unfeature' : 'Feature'}
                               </button>
                               {u.vendorProfile?.idDocument && !u.vendorProfile?.idVerified && (
-                                <button onClick={() => verifyId(u._id)} className="text-xs px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors">
-                                  Verify ID
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => window.open(u.vendorProfile.idDocument, '_blank', 'noopener,noreferrer')}
+                                    className="text-xs px-2 py-1 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                                  >
+                                    View ID
+                                  </button>
+                                  <button onClick={() => verifyId(u._id)} className="text-xs px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors">
+                                    Verify ID
+                                  </button>
+                                  <button onClick={() => rejectId(u._id)} className="text-xs px-2 py-1 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors">
+                                    Reject ID
+                                  </button>
+                                </>
                               )}
                             </>
                           )}

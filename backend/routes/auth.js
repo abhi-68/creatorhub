@@ -7,6 +7,11 @@ const generateToken = require('../utils/generateToken');
 const { sendEmail, emailTemplates } = require('../utils/email');
 const { protect } = require('../middleware/auth');
 
+const VALID_VENDOR_CATEGORIES = [
+  'photographer', 'influencer', 'videographer', 'graphic_designer',
+  'content_creator', 'model', 'makeup_artist', 'other',
+];
+
 const sendEmailInBackground = (mailOptions, logPrefix) => {
   setImmediate(async () => {
     try {
@@ -25,28 +30,42 @@ router.post(
     body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
     body('role').optional().isIn(['user', 'vendor']).withMessage('Invalid role'),
+    body('vendorCategory')
+      .optional()
+      .isIn(VALID_VENDOR_CATEGORIES)
+      .withMessage('Invalid vendor category'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { name, email, password, role = 'user' } = req.body;
+    const { name, email, password, role = 'user', vendorCategory } = req.body;
     try {
       const exists = await User.findOne({ email });
       if (exists) return res.status(400).json({ error: 'Email already registered' });
 
       const verificationToken = crypto.randomBytes(32).toString('hex');
-      const user = await User.create({
+
+      const userData = {
         name,
         email,
         password,
         role,
         verificationToken,
         verificationTokenExpires: Date.now() + 24 * 60 * 60 * 1000,
-      });
+      };
+
+      // ⚠️ FIX: Actually save vendor category on registration
+      if (role === 'vendor' && vendorCategory) {
+        userData.vendorProfile = { category: vendorCategory };
+      }
+
+      const user = await User.create(userData);
 
       const verifyLink = `${process.env.CLIENT_URL}/verify-email?token=${verificationToken}`;
-      res.status(201).json({ message: 'Registration successful! Please check your email to verify your account.' });
+      res.status(201).json({
+        message: 'Registration successful! Please check your email to verify your account.',
+      });
 
       sendEmailInBackground(
         { to: email, subject: 'Verify your CreatorHub account', html: emailTemplates.verifyEmail(name, verifyLink) },
@@ -93,6 +112,8 @@ router.post('/resend-verification', [body('email').isEmail().normalizeEmail()], 
 // @GET /api/auth/verify-email
 router.get('/verify-email', async (req, res) => {
   const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Verification token is required' });
+
   try {
     const user = await User.findOne({
       verificationToken: token,
@@ -128,7 +149,7 @@ router.post(
       if (!user || !(await user.matchPassword(password))) {
         return res.status(401).json({ error: 'Invalid email or password' });
       }
-      if (!user.isActive) return res.status(403).json({ error: 'Account has been deactivated' });
+      if (!user.isActive) return res.status(403).json({ error: 'Account has been deactivated. Please contact support.' });
 
       res.json({
         token: generateToken(user._id),
@@ -168,9 +189,12 @@ router.post(
   '/reset-password',
   [
     body('token').notEmpty(),
-    body('password').isLength({ min: 6 }),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   ],
   async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
     try {
       const user = await User.findOne({
         resetPasswordToken: req.body.token,
