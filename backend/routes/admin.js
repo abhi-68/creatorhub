@@ -4,7 +4,7 @@ const User = require('../models/User');
 const Review = require('../models/Review');
 const Message = require('../models/Message');
 const { protect, requireRole } = require('../middleware/auth');
-const { sendEmail, emailTemplates } = require('../utils/email');
+const { sendEmail, emailTemplates, verifyEmailConfig } = require('../utils/email');
 
 // @GET /api/admin/users
 router.get('/users', protect, requireRole('admin'), async (req, res) => {
@@ -45,6 +45,34 @@ router.get('/stats', protect, requireRole('admin'), async (req, res) => {
     res.json({ totalUsers, totalVendors, verifiedVendors, totalReviews, pendingIdVerifications });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// @GET /api/admin/email-status — diagnose SMTP config without digging through server logs
+router.get('/email-status', protect, requireRole('admin'), async (req, res) => {
+  const ok = await verifyEmailConfig();
+  res.json({
+    ok,
+    emailUserSet: !!process.env.EMAIL_USER,
+    emailPassSet: !!process.env.EMAIL_PASS,
+    message: ok
+      ? 'SMTP connection verified — credentials are valid.'
+      : 'SMTP verification failed — check server logs for the exact error, and confirm EMAIL_USER/EMAIL_PASS are set correctly (EMAIL_PASS must be a Gmail App Password).',
+  });
+});
+
+// @POST /api/admin/email-test — send a real test email to confirm end-to-end delivery
+router.post('/email-test', protect, requireRole('admin'), async (req, res) => {
+  const to = req.body?.to || req.user.email;
+  try {
+    const info = await sendEmail({
+      to,
+      subject: 'CreatorHub test email',
+      html: `<p>This is a test email sent at ${new Date().toISOString()}. If you received this, SMTP is working.</p>`,
+    });
+    res.json({ ok: true, messageId: info.messageId, sentTo: to });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message, code: err.code });
   }
 });
 

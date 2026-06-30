@@ -1,5 +1,10 @@
 const nodemailer = require('nodemailer');
 
+// Render/clipboard copy-paste frequently introduces trailing newlines or spaces
+// around env var values, which silently breaks SMTP auth — trim defensively.
+const EMAIL_USER = (process.env.EMAIL_USER || '').trim();
+const EMAIL_PASS = (process.env.EMAIL_PASS || '').trim();
+
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
@@ -9,19 +14,36 @@ const transporter = nodemailer.createTransport({
   greetingTimeout: 20000,
   socketTimeout: 30000,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS, // Use App Password, not your real Gmail password
+    user: EMAIL_USER,
+    pass: EMAIL_PASS, // Use App Password, not your real Gmail password
   },
 });
 
 const sendEmail = async ({ to, subject, html }) => {
   const mailOptions = {
-    from: `"CreatorHub" <${process.env.EMAIL_USER}>`,
+    from: `"CreatorHub" <${EMAIL_USER}>`,
     to,
     subject,
     html,
   };
   return transporter.sendMail(mailOptions);
+};
+
+// Verifies SMTP credentials/connectivity. Call at startup so misconfiguration
+// shows up immediately in logs instead of silently failing on the first send.
+const verifyEmailConfig = async () => {
+  if (!EMAIL_USER || !EMAIL_PASS) {
+    console.error('[email] EMAIL_USER or EMAIL_PASS is not set — emails will not send.');
+    return false;
+  }
+  try {
+    await transporter.verify();
+    console.log(`[email] SMTP connection verified OK (sending as ${EMAIL_USER})`);
+    return true;
+  } catch (err) {
+    console.error('[email] SMTP verification FAILED:', err.code, err.responseCode || '', err.message);
+    return false;
+  }
 };
 
 const emailTemplates = {
@@ -200,4 +222,4 @@ const emailTemplates = {
   `,
 };
 
-module.exports = { sendEmail, emailTemplates };
+module.exports = { sendEmail, emailTemplates, verifyEmailConfig };

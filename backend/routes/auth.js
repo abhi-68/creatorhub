@@ -15,9 +15,10 @@ const VALID_VENDOR_CATEGORIES = [
 const sendEmailInBackground = (mailOptions, logPrefix) => {
   setImmediate(async () => {
     try {
-      await sendEmail(mailOptions);
+      const info = await sendEmail(mailOptions);
+      console.log(`${logPrefix}: sent to ${mailOptions.to} (${info.messageId})`);
     } catch (error) {
-      console.warn(`${logPrefix}:`, error.message);
+      console.error(`${logPrefix}: FAILED to ${mailOptions.to} —`, error.code, error.responseCode || '', error.message);
     }
   });
 };

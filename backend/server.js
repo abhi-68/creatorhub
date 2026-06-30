@@ -52,6 +52,9 @@ const io = new Server(server, {
 // Connect DB
 connectDB();
 
+// Verify SMTP config at boot so email misconfiguration is visible in logs immediately
+require('./utils/email').verifyEmailConfig();
+
 // Security middleware
 app.use(helmet());
 app.use(cors(corsOptions));
