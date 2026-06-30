@@ -48,16 +48,16 @@ router.get('/stats', protect, requireRole('admin'), async (req, res) => {
   }
 });
 
-// @GET /api/admin/email-status — diagnose SMTP config without digging through server logs
+// @GET /api/admin/email-status — diagnose email config without digging through server logs
 router.get('/email-status', protect, requireRole('admin'), async (req, res) => {
   const ok = await verifyEmailConfig();
   res.json({
     ok,
-    emailUserSet: !!process.env.EMAIL_USER,
-    emailPassSet: !!process.env.EMAIL_PASS,
+    sendgridKeySet: !!process.env.SENDGRID_API_KEY,
+    senderSet: !!process.env.EMAIL_USER,
     message: ok
-      ? 'SMTP connection verified — credentials are valid.'
-      : 'SMTP verification failed — check server logs for the exact error, and confirm EMAIL_USER/EMAIL_PASS are set correctly (EMAIL_PASS must be a Gmail App Password).',
+      ? 'SendGrid is configured. Use POST /api/admin/email-test to confirm an email actually arrives — the sender address must also be verified in your SendGrid account.'
+      : 'Email not configured — set SENDGRID_API_KEY and EMAIL_USER (the verified sender address) in your environment.',
   });
 });
 
@@ -68,11 +68,12 @@ router.post('/email-test', protect, requireRole('admin'), async (req, res) => {
     const info = await sendEmail({
       to,
       subject: 'CreatorHub test email',
-      html: `<p>This is a test email sent at ${new Date().toISOString()}. If you received this, SMTP is working.</p>`,
+      html: `<p>This is a test email sent at ${new Date().toISOString()}. If you received this, email delivery is working.</p>`,
     });
     res.json({ ok: true, messageId: info.messageId, sentTo: to });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message, code: err.code });
+    const sgErrors = err.response?.body?.errors;
+    res.status(500).json({ ok: false, error: sgErrors || err.message });
   }
 });
 

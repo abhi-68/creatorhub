@@ -1,83 +1,41 @@
-const nodemailer = require('nodemailer');
-const dns = require('dns');
+const sgMail = require('@sendgrid/mail');
 
-// Render/clipboard copy-paste frequently introduces trailing newlines or spaces
-// around env var values, which silently breaks SMTP auth — trim defensively.
-const EMAIL_USER = (process.env.EMAIL_USER || '').trim();
-const EMAIL_PASS = (process.env.EMAIL_PASS || '').trim();
+// Render blocks outbound SMTP ports (25/465/587) on its network entirely, so
+// raw SMTP (e.g. Gmail) can never connect from this backend — every attempt
+// times out or fails to route, no matter how the connection is configured.
+// SendGrid sends over its HTTPS API instead, which Render does allow.
+const SENDGRID_API_KEY = (process.env.SENDGRID_API_KEY || '').trim();
+const EMAIL_FROM = (process.env.EMAIL_USER || '').trim();
 
-const SMTP_HOST = 'smtp.gmail.com';
-const SMTP_PORT = 587;
-
-// Nodemailer resolves SMTP hosts with its own DNS layer (dns.Resolver,
-// raw queries) rather than the OS resolver. On Render that layer returns
-// AAAA (IPv6) records but nothing for A (IPv4), so nodemailer ends up only
-// attempting an IPv6 address — which Render's network can't route
-// (ENETUNREACH). dns.lookup() goes through the OS/platform resolver instead
-// and resolves IPv4 fine, so we resolve it ourselves and connect by IP
-// literal, which makes nodemailer skip its own DNS step entirely.
-let cachedIPv4 = null;
-let cachedAt = 0;
-const IP_CACHE_TTL = 5 * 60 * 1000;
-
-const resolveSmtpHost = () =>
-  new Promise((resolve) => {
-    const now = Date.now();
-    if (cachedIPv4 && now - cachedAt < IP_CACHE_TTL) return resolve(cachedIPv4);
-    dns.lookup(SMTP_HOST, { family: 4 }, (err, address) => {
-      if (err || !address) return resolve(SMTP_HOST); // fall back to hostname-based resolution
-      cachedIPv4 = address;
-      cachedAt = now;
-      resolve(address);
-    });
-  });
-
-const buildTransporter = async () => {
-  const host = await resolveSmtpHost();
-  return nodemailer.createTransport({
-    host,
-    port: SMTP_PORT,
-    secure: false,
-    connectionTimeout: 20000,
-    greetingTimeout: 20000,
-    socketTimeout: 30000,
-    // Connecting by IP needs an explicit servername so TLS/SNI and Google's
-    // certificate hostname check still validate against smtp.gmail.com.
-    tls: { servername: SMTP_HOST },
-    auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_PASS, // Use App Password, not your real Gmail password
-    },
-  });
-};
+if (SENDGRID_API_KEY) sgMail.setApiKey(SENDGRID_API_KEY);
 
 const sendEmail = async ({ to, subject, html }) => {
-  const transporter = await buildTransporter();
-  const mailOptions = {
-    from: `"CreatorHub" <${EMAIL_USER}>`,
+  if (!SENDGRID_API_KEY) throw new Error('SENDGRID_API_KEY is not set');
+  const [response] = await sgMail.send({
     to,
+    from: { email: EMAIL_FROM, name: 'CreatorHub' },
     subject,
     html,
-  };
-  return transporter.sendMail(mailOptions);
+  });
+  return { messageId: response.headers['x-message-id'] || null };
 };
 
-// Verifies SMTP credentials/connectivity. Call at startup so misconfiguration
-// shows up immediately in logs instead of silently failing on the first send.
+// Confirms SendGrid is configured. Call at startup so misconfiguration shows
+// up immediately in logs instead of silently failing on the first send. This
+// only checks that credentials are present — SendGrid has no lightweight
+// "ping" endpoint, so true delivery is only confirmed by an actual send (see
+// the admin /email-test endpoint).
 const verifyEmailConfig = async () => {
-  if (!EMAIL_USER || !EMAIL_PASS) {
-    console.error('[email] EMAIL_USER or EMAIL_PASS is not set — emails will not send.');
+  if (!SENDGRID_API_KEY) {
+    console.error('[email] SENDGRID_API_KEY is not set — emails will not send.');
     return false;
   }
-  try {
-    const transporter = await buildTransporter();
-    await transporter.verify();
-    console.log(`[email] SMTP connection verified OK (sending as ${EMAIL_USER})`);
-    return true;
-  } catch (err) {
-    console.error('[email] SMTP verification FAILED:', err.code, err.responseCode || '', err.message);
+  if (!EMAIL_FROM) {
+    console.error('[email] EMAIL_USER (sender address) is not set — emails will not send.');
     return false;
   }
+  console.log(`[email] SendGrid configured (sending as ${EMAIL_FROM}). Note: ${EMAIL_FROM} must be a verified sender in your SendGrid account or sends will be rejected.`);
+  return true;
 };
 
 const emailTemplates = {
