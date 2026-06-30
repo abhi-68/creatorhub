@@ -9,10 +9,16 @@ const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
   secure: false,
-  family: 4,
   connectionTimeout: 20000,
   greetingTimeout: 20000,
   socketTimeout: 30000,
+  // Nodemailer ignores a top-level `family` option entirely — it instead decides
+  // whether to even attempt IPv4 by inspecting local (non-internal) network
+  // interfaces. On Render the container's reported interface is IPv6-only, so
+  // IPv4 DNS resolution got skipped and it tried only IPv6, which Render can't
+  // route (ENETUNREACH) — hence emails silently failing. Including internal
+  // interfaces (127.0.0.1 is IPv4) makes it correctly attempt IPv4 too.
+  allowInternalNetworkInterfaces: true,
   auth: {
     user: EMAIL_USER,
     pass: EMAIL_PASS, // Use App Password, not your real Gmail password
