@@ -1,31 +1,58 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns');
 
 // Render/clipboard copy-paste frequently introduces trailing newlines or spaces
 // around env var values, which silently breaks SMTP auth — trim defensively.
 const EMAIL_USER = (process.env.EMAIL_USER || '').trim();
 const EMAIL_PASS = (process.env.EMAIL_PASS || '').trim();
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
-  connectionTimeout: 20000,
-  greetingTimeout: 20000,
-  socketTimeout: 30000,
-  // Nodemailer ignores a top-level `family` option entirely — it instead decides
-  // whether to even attempt IPv4 by inspecting local (non-internal) network
-  // interfaces. On Render the container's reported interface is IPv6-only, so
-  // IPv4 DNS resolution got skipped and it tried only IPv6, which Render can't
-  // route (ENETUNREACH) — hence emails silently failing. Including internal
-  // interfaces (127.0.0.1 is IPv4) makes it correctly attempt IPv4 too.
-  allowInternalNetworkInterfaces: true,
-  auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS, // Use App Password, not your real Gmail password
-  },
-});
+const SMTP_HOST = 'smtp.gmail.com';
+const SMTP_PORT = 587;
+
+// Nodemailer resolves SMTP hosts with its own DNS layer (dns.Resolver,
+// raw queries) rather than the OS resolver. On Render that layer returns
+// AAAA (IPv6) records but nothing for A (IPv4), so nodemailer ends up only
+// attempting an IPv6 address — which Render's network can't route
+// (ENETUNREACH). dns.lookup() goes through the OS/platform resolver instead
+// and resolves IPv4 fine, so we resolve it ourselves and connect by IP
+// literal, which makes nodemailer skip its own DNS step entirely.
+let cachedIPv4 = null;
+let cachedAt = 0;
+const IP_CACHE_TTL = 5 * 60 * 1000;
+
+const resolveSmtpHost = () =>
+  new Promise((resolve) => {
+    const now = Date.now();
+    if (cachedIPv4 && now - cachedAt < IP_CACHE_TTL) return resolve(cachedIPv4);
+    dns.lookup(SMTP_HOST, { family: 4 }, (err, address) => {
+      if (err || !address) return resolve(SMTP_HOST); // fall back to hostname-based resolution
+      cachedIPv4 = address;
+      cachedAt = now;
+      resolve(address);
+    });
+  });
+
+const buildTransporter = async () => {
+  const host = await resolveSmtpHost();
+  return nodemailer.createTransport({
+    host,
+    port: SMTP_PORT,
+    secure: false,
+    connectionTimeout: 20000,
+    greetingTimeout: 20000,
+    socketTimeout: 30000,
+    // Connecting by IP needs an explicit servername so TLS/SNI and Google's
+    // certificate hostname check still validate against smtp.gmail.com.
+    tls: { servername: SMTP_HOST },
+    auth: {
+      user: EMAIL_USER,
+      pass: EMAIL_PASS, // Use App Password, not your real Gmail password
+    },
+  });
+};
 
 const sendEmail = async ({ to, subject, html }) => {
+  const transporter = await buildTransporter();
   const mailOptions = {
     from: `"CreatorHub" <${EMAIL_USER}>`,
     to,
@@ -43,6 +70,7 @@ const verifyEmailConfig = async () => {
     return false;
   }
   try {
+    const transporter = await buildTransporter();
     await transporter.verify();
     console.log(`[email] SMTP connection verified OK (sending as ${EMAIL_USER})`);
     return true;
