@@ -22,6 +22,7 @@ export default function Chat() {
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
+  const openingForRef = useRef(null); // tracks which uid is currently being opened
 
   // Ref so socket listeners always see the latest activeUser without re-subscribing
   const activeUserRef = useRef(null);
@@ -33,29 +34,40 @@ export default function Chat() {
 
   useEffect(() => { loadConversations(); }, []);
 
-  // Open conversation from URL param
+  // Open conversation from URL param — guard against double-trigger from navigate()
   useEffect(() => {
-    if (paramUserId) openConversation(paramUserId);
+    if (paramUserId && openingForRef.current !== paramUserId) {
+      openConversation(paramUserId);
+    }
   }, [paramUserId]);
 
   const openConversation = async (uid) => {
+    if (openingForRef.current === uid) return; // already loading this conversation
+    openingForRef.current = uid;
     setOpeningChat(true);
     try {
-      const [msgRes, userRes] = await Promise.all([
+      // Fetch messages and participant profile in parallel; user lookup is non-blocking
+      const [msgRes, participantData] = await Promise.all([
         api.get(`/chat/${uid}`),
-        api.get(`/vendors/${uid}`).catch(() => api.get(`/users/${uid}`)),
+        api.get(`/vendors/${uid}`)
+          .catch(() => api.get(`/users/${uid}`))
+          .catch(() => null), // if both fail, use a placeholder — don't block opening
       ]);
       setMessages(msgRes.data);
       setPeerTyping(false);
-      setActiveUser(userRes.data._id ? userRes.data : { _id: uid, name: 'User' });
+      setActiveUser(
+        participantData?.data?._id
+          ? participantData.data
+          : { _id: uid, name: 'User' }
+      );
       navigate(`/chat/${uid}`, { replace: true });
-      // Conversations were marked-read server-side; refresh badge + sidebar
       loadConversations();
       fetchUnread();
     } catch {
       toast.error('Could not open conversation');
     } finally {
       setOpeningChat(false);
+      openingForRef.current = null;
     }
   };
 
