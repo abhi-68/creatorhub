@@ -21,6 +21,7 @@ export default function Chat() {
   const [openingChat, setOpeningChat] = useState(false);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const isTypingRef = useRef(false);
 
   // Ref so socket listeners always see the latest activeUser without re-subscribing
   const activeUserRef = useRef(null);
@@ -111,11 +112,18 @@ export default function Chat() {
   const handleTyping = (e) => {
     setInput(e.target.value);
     if (!socket?.connected || !activeUser) return;
-    socket.emit('typing', { receiverId: activeUser._id, isTyping: true });
-    clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      socket.emit('typing', { receiverId: activeUser._id, isTyping: false });
-    }, 1500);
+    // Defer socket work so the browser can repaint the input first
+    setTimeout(() => {
+      if (!isTypingRef.current) {
+        isTypingRef.current = true;
+        socket.emit('typing', { receiverId: activeUser._id, isTyping: true });
+      }
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        isTypingRef.current = false;
+        socket.emit('typing', { receiverId: activeUser._id, isTyping: false });
+      }, 1500);
+    }, 0);
   };
 
   return (
