@@ -45,32 +45,30 @@ router.post(
       const exists = await User.findOne({ email });
       if (exists) return res.status(400).json({ error: 'Email already registered' });
 
-      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
       const userData = {
         name,
         email,
         password,
         role,
-        verificationToken,
-        verificationTokenExpires: Date.now() + 24 * 60 * 60 * 1000,
+        verificationCode,
+        verificationCodeExpires: Date.now() + 15 * 60 * 1000, // 15 minutes
       };
 
-      // ⚠️ FIX: Actually save vendor category on registration
       if (role === 'vendor' && vendorCategory) {
         userData.vendorProfile = { category: vendorCategory };
       }
 
       const user = await User.create(userData);
 
-      const verifyLink = `${process.env.CLIENT_URL}/verify-email?token=${verificationToken}`;
       res.status(201).json({
-        message: 'Registration successful! Please check your email to verify your account.',
+        message: 'Registration successful! Please check your email for your verification code.',
       });
 
       sendEmailInBackground(
-        { to: email, subject: 'Verify your CreatorHub account', html: emailTemplates.verifyEmail(name, verifyLink) },
-        'Email sending failed (check EMAIL_USER/EMAIL_PASS in .env)'
+        { to: email, subject: 'Your CreatorHub verification code', html: emailTemplates.verifyCode(name, verificationCode) },
+        'Verification code email failed'
       );
 
       if (role === 'vendor') {
@@ -90,48 +88,56 @@ router.post(
 router.post('/resend-verification', [body('email').isEmail().normalizeEmail()], async (req, res) => {
   try {
     const user = await User.findOne({ email: req.body.email });
-    if (!user) return res.json({ message: 'If that email exists, a verification link was sent.' });
+    if (!user) return res.json({ message: 'If that email exists, a new code was sent.' });
     if (user.isVerified) return res.status(400).json({ error: 'Email is already verified' });
 
-    const verificationToken = require('crypto').randomBytes(32).toString('hex');
-    user.verificationToken = verificationToken;
-    user.verificationTokenExpires = Date.now() + 24 * 60 * 60 * 1000;
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    user.verificationCode = verificationCode;
+    user.verificationCodeExpires = Date.now() + 15 * 60 * 1000;
     await user.save();
 
-    const verifyLink = `${process.env.CLIENT_URL}/verify-email?token=${verificationToken}`;
-    res.json({ message: 'Verification email sent! Check your inbox.' });
+    res.json({ message: 'New verification code sent! Check your inbox.' });
 
     sendEmailInBackground(
-      { to: user.email, subject: 'Verify your CreatorHub account', html: emailTemplates.verifyEmail(user.name, verifyLink) },
-      'Email failed'
+      { to: user.email, subject: 'Your CreatorHub verification code', html: emailTemplates.verifyCode(user.name, verificationCode) },
+      'Resend code email failed'
     );
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// @GET /api/auth/verify-email
-router.get('/verify-email', async (req, res) => {
-  const { token } = req.query;
-  if (!token) return res.status(400).json({ error: 'Verification token is required' });
+// @POST /api/auth/verify-code
+router.post(
+  '/verify-code',
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('code').isLength({ min: 6, max: 6 }).withMessage('Code must be 6 digits'),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
 
-  try {
-    const user = await User.findOne({
-      verificationToken: token,
-      verificationTokenExpires: { $gt: Date.now() },
-    });
-    if (!user) return res.status(400).json({ error: 'Invalid or expired verification token' });
+    const { email, code } = req.body;
+    try {
+      const user = await User.findOne({
+        email,
+        verificationCode: code,
+        verificationCodeExpires: { $gt: Date.now() },
+      });
+      if (!user) return res.status(400).json({ error: 'Invalid or expired code. Request a new one.' });
 
-    user.isVerified = true;
-    user.verificationToken = undefined;
-    user.verificationTokenExpires = undefined;
-    await user.save();
+      user.isVerified = true;
+      user.verificationCode = undefined;
+      user.verificationCodeExpires = undefined;
+      await user.save();
 
-    res.json({ message: 'Email verified successfully! You can now log in.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+      res.json({ message: 'Email verified successfully! You can now log in.' });
+    } catch (err) {
+      res.status(500).json({ error: 'Server error' });
+    }
   }
-});
+);
 
 // @POST /api/auth/login
 router.post(
@@ -151,6 +157,17 @@ router.post(
         return res.status(401).json({ error: 'Invalid email or password' });
       }
       if (!user.isActive) return res.status(403).json({ error: 'Account has been deactivated. Please contact support.' });
+      if (!user.isVerified) {
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        user.verificationCode = verificationCode;
+        user.verificationCodeExpires = Date.now() + 15 * 60 * 1000;
+        await user.save();
+        sendEmailInBackground(
+          { to: user.email, subject: 'Your CreatorHub verification code', html: emailTemplates.verifyCode(user.name, verificationCode) },
+          'Login verify code email failed'
+        );
+        return res.status(403).json({ error: 'Email not verified', needsVerification: true, email: user.email });
+      }
 
       res.json({
         token: generateToken(user._id),

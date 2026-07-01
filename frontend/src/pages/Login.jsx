@@ -11,7 +11,6 @@ export default function Login() {
   const navigate = useNavigate();
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [resending, setResending] = useState(false);
   const { values, handleChange } = useForm({ email: '', password: '' });
 
   const handleSubmit = async (e) => {
@@ -28,22 +27,15 @@ export default function Login() {
       }
       else navigate('/dashboard');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Login failed');
+      const data = err.response?.data;
+      if (data?.needsVerification) {
+        toast('Check your email for a verification code', { icon: '📧' });
+        navigate(`/verify-email?email=${encodeURIComponent(data.email || values.email)}`);
+      } else {
+        toast.error(data?.error || 'Login failed');
+      }
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleResend = async () => {
-    if (!values.email) return toast.error('Enter your email first');
-    setResending(true);
-    try {
-      await api.post('/auth/resend-verification', { email: values.email });
-      toast.success('Verification email sent! Check your inbox.');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to resend');
-    } finally {
-      setResending(false);
     }
   };
 
@@ -79,13 +71,6 @@ export default function Login() {
             {loading ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Signing in...</span> : 'Sign In'}
           </button>
         </form>
-
-        <div className="mt-4 bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-          <p className="text-gray-500 text-sm mb-2">Did not receive a verification email?</p>
-          <button onClick={handleResend} disabled={resending} className="text-sm text-primary-400 hover:text-primary-300 font-medium disabled:opacity-50">
-            {resending ? 'Sending...' : '📧 Resend Verification Email'}
-          </button>
-        </div>
 
         <p className="text-center text-gray-400 mt-4 text-sm">
           Don't have an account?{' '}

@@ -3,7 +3,7 @@ import { useForm } from '../hooks/useForm';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import toast from 'react-hot-toast';
-import { SparklesIcon, EyeIcon, EyeSlashIcon, CameraIcon, MegaphoneIcon, FilmIcon, PaintBrushIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 
 const roles = [
   { value: 'user', label: 'User', desc: 'Browse & hire creators', icon: '👤' },
@@ -27,7 +27,6 @@ export default function Register() {
   const [category, setCategory] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
   const { values, handleChange } = useForm({ name: '', email: '', password: '' });
   const navigate = useNavigate();
 
@@ -41,26 +40,13 @@ export default function Register() {
         role,
         ...(role === 'vendor' && category ? { vendorCategory: category } : {}),
       });
-      setDone(true);
+      navigate(`/verify-email?email=${encodeURIComponent(values.email)}`);
     } catch (err) {
       toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Registration failed');
     } finally {
       setLoading(false);
     }
   };
-
-  if (done) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4 bg-gray-950">
-        <div className="text-center max-w-md">
-          <div className="text-6xl mb-6">📧</div>
-          <h2 className="text-2xl font-bold text-white mb-3">Check your email!</h2>
-          <p className="text-gray-400 mb-6">We sent a verification link to <strong className="text-primary-400">{values.email}</strong>. Click it to activate your account.</p>
-          <Link to="/login" className="btn-primary">Go to Login</Link>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-gray-950">

@@ -11,6 +11,8 @@ const userSchema = new mongoose.Schema(
     isVerified: { type: Boolean, default: false },
     verificationToken: { type: String },
     verificationTokenExpires: { type: Date },
+    verificationCode: { type: String },
+    verificationCodeExpires: { type: Date },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
     isActive: { type: Boolean, default: true },
@@ -73,6 +75,8 @@ userSchema.methods.toSafeObject = function () {
   delete obj.password;
   delete obj.verificationToken;
   delete obj.verificationTokenExpires;
+  delete obj.verificationCode;
+  delete obj.verificationCodeExpires;
   delete obj.resetPasswordToken;
   delete obj.resetPasswordExpires;
   return obj;

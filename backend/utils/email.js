@@ -166,6 +166,50 @@ const emailTemplates = {
     </html>
   `,
 
+  verifyCode: (name, code) => `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); padding: 40px; text-align: center; }
+        .header h1 { color: #fff; margin: 0; font-size: 28px; }
+        .header p { color: rgba(255,255,255,0.85); margin: 8px 0 0; }
+        .body { padding: 40px; }
+        .body h2 { color: #1f2937; margin-top: 0; }
+        .body p { color: #6b7280; line-height: 1.6; }
+        .code-box { background: #1f2937; border-radius: 12px; padding: 28px 20px; text-align: center; margin: 28px 0; }
+        .code { font-size: 48px; font-weight: 800; letter-spacing: 12px; color: #a78bfa; font-family: monospace; }
+        .expire-note { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; margin: 16px 0; color: #92400e; font-size: 14px; }
+        .footer { background: #f9fafb; padding: 24px 40px; text-align: center; color: #9ca3af; font-size: 13px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>✨ CreatorHub</h1>
+          <p>Email Verification</p>
+        </div>
+        <div class="body">
+          <h2>Hi ${name}! 👋</h2>
+          <p>Use the code below to verify your email address. Enter it on the verification page to activate your account.</p>
+          <div class="code-box">
+            <div class="code">${code}</div>
+            <p style="color:#9ca3af;font-size:13px;margin:8px 0 0;">Your verification code</p>
+          </div>
+          <div class="expire-note">⏱ This code expires in <strong>15 minutes</strong>.</div>
+          <p>If you didn't create a CreatorHub account, you can safely ignore this email.</p>
+        </div>
+        <div class="footer">
+          <p>© 2024 CreatorHub. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `,
+
   idApproved: (name) => `
     <!DOCTYPE html>
     <html>
