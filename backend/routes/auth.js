@@ -158,15 +158,7 @@ router.post(
       }
       if (!user.isActive) return res.status(403).json({ error: 'Account has been deactivated. Please contact support.' });
       if (!user.isVerified) {
-        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-        user.verificationCode = verificationCode;
-        user.verificationCodeExpires = Date.now() + 15 * 60 * 1000;
-        await user.save();
-        sendEmailInBackground(
-          { to: user.email, subject: 'Your CreatorHub verification code', html: emailTemplates.verifyCode(user.name, verificationCode) },
-          'Login verify code email failed'
-        );
-        return res.status(403).json({ error: 'Email not verified', needsVerification: true, email: user.email });
+        return res.status(403).json({ error: 'Please verify your email before logging in.', needsVerification: true, email: user.email });
       }
 
       res.json({

@@ -11,6 +11,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const { values, handleChange } = useForm({ email: '', password: '' });
 
   const handleSubmit = async (e) => {
@@ -29,8 +30,7 @@ export default function Login() {
     } catch (err) {
       const data = err.response?.data;
       if (data?.needsVerification) {
-        toast('Check your email for a verification code', { icon: '📧' });
-        navigate(`/verify-email?email=${encodeURIComponent(data.email || values.email)}`);
+        setUnverifiedEmail(data.email || values.email);
       } else {
         toast.error(data?.error || 'Login failed');
       }
@@ -70,6 +70,19 @@ export default function Login() {
           <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-base">
             {loading ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Signing in...</span> : 'Sign In'}
           </button>
+
+          {unverifiedEmail && (
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-center">
+              <p className="text-yellow-300 text-sm font-medium mb-1">Email not verified</p>
+              <p className="text-yellow-200/70 text-xs mb-3">You must verify your email before you can log in.</p>
+              <Link
+                to={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
+                className="text-sm text-yellow-300 hover:text-yellow-200 font-medium underline underline-offset-2"
+              >
+                Enter verification code →
+              </Link>
+            </div>
+          )}
         </form>
 
         <p className="text-center text-gray-400 mt-4 text-sm">
