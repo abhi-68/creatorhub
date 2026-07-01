@@ -8,10 +8,12 @@ const { body, validationResult } = require('express-validator');
 // @GET /api/vendors — public list with filters
 router.get('/', async (req, res) => {
   try {
-    const { category, search, page = 1, limit = 12, sort = 'rating' } = req.query;
+    const { category, search, page = 1, limit = 12, sort = 'rating', available, max_price } = req.query;
     const filter = { role: 'vendor', isActive: true, isVerified: true, 'vendorProfile.idVerified': true };
 
     if (category) filter['vendorProfile.category'] = category;
+    if (available === '1') filter['vendorProfile.availability'] = { $ne: false };
+    if (max_price) filter['vendorProfile.packages'] = { $elemMatch: { price: { $lte: Number(max_price) } } };
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -20,21 +22,33 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    const sortMap = {
-      rating: { 'vendorProfile.rating': -1 },
-      newest: { createdAt: -1 },
-      reviews: { 'vendorProfile.totalReviews': -1 },
-    };
-
-    const vendors = await User.find(filter)
-      .select('-password -verificationToken -resetPasswordToken -vendorProfile.idDocument')
-      .sort(sortMap[sort] || sortMap.rating)
-      .skip((page - 1) * limit)
-      .limit(Number(limit));
-
     const total = await User.countDocuments(filter);
+    const skip = (Number(page) - 1) * Number(limit);
 
-    res.json({ vendors, total, pages: Math.ceil(total / limit), page: Number(page) });
+    let vendors;
+    if (sort === 'price_asc' || sort === 'price_desc') {
+      vendors = await User.aggregate([
+        { $match: filter },
+        { $addFields: { _minPrice: { $min: '$vendorProfile.packages.price' } } },
+        { $sort: sort === 'price_asc' ? { _minPrice: 1, 'vendorProfile.rating': -1 } : { _minPrice: -1 } },
+        { $skip: skip },
+        { $limit: Number(limit) },
+        { $project: { password: 0, verificationToken: 0, resetPasswordToken: 0, 'vendorProfile.idDocument': 0, _minPrice: 0 } },
+      ]);
+    } else {
+      const sortMap = {
+        rating: { 'vendorProfile.rating': -1 },
+        newest: { createdAt: -1 },
+        reviews: { 'vendorProfile.totalReviews': -1 },
+      };
+      vendors = await User.find(filter)
+        .select('-password -verificationToken -resetPasswordToken -vendorProfile.idDocument')
+        .sort(sortMap[sort] || sortMap.rating)
+        .skip(skip)
+        .limit(Number(limit));
+    }
+
+    res.json({ vendors, total, pages: Math.ceil(total / Number(limit)), page: Number(page) });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
