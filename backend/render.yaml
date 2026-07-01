@@ -16,7 +16,7 @@ services:
         sync: false
       - key: EMAIL_USER
         sync: false
-      - key: SENDGRID_API_KEY
+      - key: RESEND_API_KEY
         sync: false
       - key: CLOUDINARY_CLOUD_NAME
         sync: false

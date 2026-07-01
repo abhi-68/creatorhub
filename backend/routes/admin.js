@@ -56,8 +56,8 @@ router.get('/email-status', protect, requireRole('admin'), async (req, res) => {
     sendgridKeySet: !!process.env.SENDGRID_API_KEY,
     senderSet: !!process.env.EMAIL_USER,
     message: ok
-      ? 'SendGrid is configured. Use POST /api/admin/email-test to confirm an email actually arrives — the sender address must also be verified in your SendGrid account.'
-      : 'Email not configured — set SENDGRID_API_KEY and EMAIL_USER (the verified sender address) in your environment.',
+      ? 'Resend is configured. Use POST /api/admin/email-test to confirm an email actually arrives.'
+      : 'Email not configured — set RESEND_API_KEY in your Render environment variables.',
   });
 });
 

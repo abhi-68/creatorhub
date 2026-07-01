@@ -1,40 +1,31 @@
-const sgMail = require('@sendgrid/mail');
+const { Resend } = require('resend');
 
-// Render blocks outbound SMTP ports (25/465/587) on its network entirely, so
-// raw SMTP (e.g. Gmail) can never connect from this backend — every attempt
-// times out or fails to route, no matter how the connection is configured.
-// SendGrid sends over its HTTPS API instead, which Render does allow.
-const SENDGRID_API_KEY = (process.env.SENDGRID_API_KEY || '').trim();
-const EMAIL_FROM = (process.env.EMAIL_USER || '').trim();
+// Render blocks outbound SMTP ports entirely. Resend sends over HTTPS API.
+// EMAIL_FROM: use a verified domain address, or leave blank to use Resend's
+// shared default sender (onboarding@resend.dev) which works on free tier.
+const RESEND_API_KEY = (process.env.RESEND_API_KEY || '').trim();
+const EMAIL_FROM = (process.env.EMAIL_USER || '').trim() || 'onboarding@resend.dev';
 
-if (SENDGRID_API_KEY) sgMail.setApiKey(SENDGRID_API_KEY);
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 const sendEmail = async ({ to, subject, html }) => {
-  if (!SENDGRID_API_KEY) throw new Error('SENDGRID_API_KEY is not set');
-  const [response] = await sgMail.send({
+  if (!resend) throw new Error('RESEND_API_KEY is not set');
+  const { data, error } = await resend.emails.send({
+    from: `CreatorHub <${EMAIL_FROM}>`,
     to,
-    from: { email: EMAIL_FROM, name: 'CreatorHub' },
     subject,
     html,
   });
-  return { messageId: response.headers['x-message-id'] || null };
+  if (error) throw Object.assign(new Error(error.message), { resendError: error });
+  return { messageId: data?.id || null };
 };
 
-// Confirms SendGrid is configured. Call at startup so misconfiguration shows
-// up immediately in logs instead of silently failing on the first send. This
-// only checks that credentials are present — SendGrid has no lightweight
-// "ping" endpoint, so true delivery is only confirmed by an actual send (see
-// the admin /email-test endpoint).
 const verifyEmailConfig = async () => {
-  if (!SENDGRID_API_KEY) {
-    console.error('[email] SENDGRID_API_KEY is not set — emails will not send.');
+  if (!RESEND_API_KEY) {
+    console.error('[email] RESEND_API_KEY is not set — emails will not send.');
     return false;
   }
-  if (!EMAIL_FROM) {
-    console.error('[email] EMAIL_USER (sender address) is not set — emails will not send.');
-    return false;
-  }
-  console.log(`[email] SendGrid configured (sending as ${EMAIL_FROM}). Note: ${EMAIL_FROM} must be a verified sender in your SendGrid account or sends will be rejected.`);
+  console.log(`[email] Resend configured (sending as ${EMAIL_FROM})`);
   return true;
 };
 

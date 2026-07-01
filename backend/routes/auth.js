@@ -18,8 +18,8 @@ const sendEmailInBackground = (mailOptions, logPrefix) => {
       const info = await sendEmail(mailOptions);
       console.log(`${logPrefix}: sent to ${mailOptions.to} (${info.messageId})`);
     } catch (error) {
-      const sgErrors = error.response?.body?.errors;
-      console.error(`${logPrefix}: FAILED to ${mailOptions.to} —`, sgErrors ? JSON.stringify(sgErrors) : error.message);
+      const detail = error.resendError ? JSON.stringify(error.resendError) : error.message;
+      console.error(`${logPrefix}: FAILED to ${mailOptions.to} —`, detail);
     }
   });
 };
