@@ -1,31 +1,40 @@
-const { Resend } = require('resend');
+const Mailjet = require('node-mailjet');
 
-// Render blocks outbound SMTP ports entirely. Resend sends over HTTPS API.
-// EMAIL_FROM: use a verified domain address, or leave blank to use Resend's
-// shared default sender (onboarding@resend.dev) which works on free tier.
-const RESEND_API_KEY = (process.env.RESEND_API_KEY || '').trim();
-const EMAIL_FROM = (process.env.EMAIL_USER || '').trim() || 'onboarding@resend.dev';
+// Render blocks outbound SMTP ports entirely. Mailjet sends over HTTPS API
+// and supports verifying a single Gmail address as the sender — no domain
+// ownership required. Verify EMAIL_USER in Mailjet's dashboard first:
+// Senders & Domains → Add a sender address → click the link in your inbox.
+const MAILJET_API_KEY = (process.env.MAILJET_API_KEY || '').trim();
+const MAILJET_SECRET_KEY = (process.env.MAILJET_SECRET_KEY || '').trim();
+const EMAIL_FROM = (process.env.EMAIL_USER || '').trim();
 
-const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+const getClient = () => Mailjet.apiConnect(MAILJET_API_KEY, MAILJET_SECRET_KEY);
 
 const sendEmail = async ({ to, subject, html }) => {
-  if (!resend) throw new Error('RESEND_API_KEY is not set');
-  const { data, error } = await resend.emails.send({
-    from: `CreatorHub <${EMAIL_FROM}>`,
-    to,
-    subject,
-    html,
-  });
-  if (error) throw Object.assign(new Error(error.message), { resendError: error });
-  return { messageId: data?.id || null };
+  if (!MAILJET_API_KEY || !MAILJET_SECRET_KEY) throw new Error('MAILJET_API_KEY / MAILJET_SECRET_KEY not set');
+  const result = await getClient()
+    .post('send', { version: 'v3.1' })
+    .request({
+      Messages: [{
+        From: { Email: EMAIL_FROM, Name: 'CreatorHub' },
+        To: [{ Email: to }],
+        Subject: subject,
+        HTMLPart: html,
+      }],
+    });
+  return { messageId: result.body?.Messages?.[0]?.To?.[0]?.MessageID || null };
 };
 
 const verifyEmailConfig = async () => {
-  if (!RESEND_API_KEY) {
-    console.error('[email] RESEND_API_KEY is not set — emails will not send.');
+  if (!MAILJET_API_KEY || !MAILJET_SECRET_KEY) {
+    console.error('[email] MAILJET_API_KEY or MAILJET_SECRET_KEY is not set — emails will not send.');
     return false;
   }
-  console.log(`[email] Resend configured (sending as ${EMAIL_FROM})`);
+  if (!EMAIL_FROM) {
+    console.error('[email] EMAIL_USER (verified sender address) is not set.');
+    return false;
+  }
+  console.log(`[email] Mailjet configured (sending as ${EMAIL_FROM})`);
   return true;
 };
 
